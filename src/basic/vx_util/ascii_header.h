@@ -15,6 +15,9 @@
 
 #include <iostream>
 #include <vector>
+#include <map>
+#include <string>
+#include <utility>
 
 #include "concat_string.h"
 #include "string_array.h"
@@ -39,6 +42,13 @@ class AsciiHeaderLine {
       int          VarBegOffset;   // Offset to first variable length column
 
       StringArray  ColNames;       // Names of the header columns
+
+      // Cache of resolved column offsets, keyed by (column name, dim).
+      // col_offset() is called once per column access per STAT line, so the
+      // same lookups recur millions of times on large inputs; memoizing them
+      // avoids repeated case-insensitive linear scans of ColNames. Mutable
+      // because col_offset() is const; the header line is immutable after load.
+      mutable std::map<std::pair<std::string, int>, int> ColOffsetCache;
 
    public:
 

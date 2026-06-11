@@ -100,6 +100,8 @@ void AsciiHeaderLine::assign(const AsciiHeaderLine &a) {
 
    ColNames       = a.ColNames;
 
+   ColOffsetCache = a.ColOffsetCache;
+
    return;
 }
 
@@ -118,6 +120,8 @@ void AsciiHeaderLine::clear() {
 
    ColNames.clear();
    ColNames.set_ignore_case(true);
+
+   ColOffsetCache.clear();
 
    return;
 }
@@ -179,6 +183,9 @@ void AsciiHeaderLine::set_col_names(const char *s) {
 
    } // end for i
 
+   // Column names changed, so discard any cached offsets.
+   ColOffsetCache.clear();
+
    return;
 }
 
@@ -212,11 +219,23 @@ int AsciiHeaderLine::col_offset(const char *name, const int dim) const {
    int i, j, icur, match, offset;
    ConcatString reg_exp;
 
+   // Return a previously resolved offset for this (name, dim), if available.
+   // This avoids repeating the case-insensitive linear ColNames search (and,
+   // for variable length lines, the regular expression matching) on every
+   // column access of every STAT line.
+   const std::pair<std::string, int> cache_key(name ? name : "", dim);
+   std::map<std::pair<std::string, int>, int>::const_iterator cache_it =
+      ColOffsetCache.find(cache_key);
+   if(cache_it != ColOffsetCache.end()) return cache_it->second;
+
    // Handle fixed length lines
    if(!is_var_length()) {
 
       // Check for no match
-      if(!ColNames.has(name, offset)) return bad_data_int;
+      if(!ColNames.has(name, offset)) {
+         ColOffsetCache[cache_key] = bad_data_int;
+         return bad_data_int;
+      }
 
    }
    // Handle variable length lines
@@ -232,7 +251,10 @@ int AsciiHeaderLine::col_offset(const char *name, const int dim) const {
       }
 
       // Check for no match
-      if(is_bad_data(match)) return bad_data_int;
+      if(is_bad_data(match)) {
+         ColOffsetCache[cache_key] = bad_data_int;
+         return bad_data_int;
+      }
 
       // Fixed columns before variable ones
       if(match < VarBegOffset) {
@@ -276,6 +298,8 @@ int AsciiHeaderLine::col_offset(const char *name, const int dim) const {
          }
       }
    } // end else
+
+   ColOffsetCache[cache_key] = offset;
 
    return offset;
 }
