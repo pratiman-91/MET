@@ -611,20 +611,19 @@ if ( !f )  return false;
 
 File = ldf;
 
-char c;
+//
+// Read one full line at once with getline() instead of byte-by-byte with
+// get(), which paid the std::istream sentry overhead on every character.
+// getline() reads up to (and discards) the '\n', leaving any other characters
+// - including a trailing '\r' on CRLF input - exactly as the previous loop did.
+// The original loop returned false (dropping the line) when EOF was reached
+// before a newline, so a final line lacking a terminating newline is dropped
+// here too to keep behavior identical.
+//
 
+if ( ! std::getline(f, Line) )  return false;   // pure EOF or hard error: no data
 
-while ( f.get(c) )  {
-
-   if ( !f )  return false;
-
-   if ( c == '\n' )  { break; }
-
-   Line += c;
-
-}
-
-if ( !f )  return false;
+if ( f.eof() )  return false;                   // last line had no newline: drop, as before
 
 
 return true;
