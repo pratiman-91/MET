@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cmath>
+#include <string>
+#include <unordered_map>
 
 #include "string_array.h"
 #include "logger.h"
@@ -808,24 +810,38 @@ bool check_reg_exp(const char *reg_exp_str, const char *test_str)
 {
 
 bool valid = false;
-regex_t buffer;
-regex_t *preg = &buffer;
 
 // Check for null pointers
 if( !reg_exp_str || !test_str ) return false;
 
-if( regcomp(preg, reg_exp_str, REG_EXTENDED*REG_NOSUB) != 0 ) {
-   mlog << Error << "\ncheck_reg_exp(char *, char *) -> "
-        << "regcomp error for \""
-        << reg_exp_str << "\" and \"" << test_str << "\"\n\n";
+//
+// Cache compiled regular expressions, keyed by pattern string. The same small,
+// bounded set of patterns (e.g. column-name lookups in AsciiHeaderLine) is
+// otherwise recompiled millions of times, which dominates stat_analysis runtime
+// on large inputs. The cache is thread_local so it needs no locking under
+// OpenMP; compiled entries are reused for the life of the thread. The matching
+// result is identical to compiling the pattern fresh on every call.
+//
+static thread_local std::unordered_map<std::string, regex_t> regex_cache;
 
-   exit ( 1 );
+auto it = regex_cache.find(reg_exp_str);
+
+if( it == regex_cache.end() ) {
+
+   regex_t compiled;
+
+   if( regcomp(&compiled, reg_exp_str, REG_EXTENDED*REG_NOSUB) != 0 ) {
+      mlog << Error << "\ncheck_reg_exp(char *, char *) -> "
+           << "regcomp error for \""
+           << reg_exp_str << "\" and \"" << test_str << "\"\n\n";
+
+      exit ( 1 );
+   }
+
+   it = regex_cache.emplace(reg_exp_str, compiled).first;
 }
 
-if( regexec(preg, test_str, 0, nullptr, 0) == 0 ) { valid = true; }
-
-// Free allocated memory.
-regfree( preg );
+if( regexec(&(it->second), test_str, 0, nullptr, 0) == 0 ) { valid = true; }
 
 return valid;
 
